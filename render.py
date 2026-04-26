@@ -304,11 +304,11 @@ def interpolate_view_original(model_path, load2gpt_on_the_fly, is_6dof, name, it
 
 
 def render_sets(dataset: ModelParams, iteration: int, pipeline: PipelineParams, skip_train: bool, skip_test: bool,
-                mode: str):
+                mode: str, head_layer: int):
     with torch.no_grad():
         gaussians = GaussianModel(dataset.sh_degree)
         scene = Scene(dataset, gaussians, load_iteration=iteration, shuffle=False)
-        deform = DeformModel(dataset.is_blender, dataset.is_6dof)
+        deform = DeformModel(dataset.is_blender, dataset.is_6dof, head_layer)
         deform.load_weights(dataset.model_path)
 
         bg_color = [1, 1, 1] if dataset.white_background else [0, 0, 0]
@@ -348,10 +348,11 @@ if __name__ == "__main__":
     parser.add_argument("--skip_test", action="store_true")
     parser.add_argument("--quiet", action="store_true")
     parser.add_argument("--mode", default='render', choices=['render', 'time', 'view', 'all', 'pose', 'original'])
+    parser.add_argument("--head_layer", type=int, default=256)
     args = get_combined_args(parser)
     print("Rendering " + args.model_path)
 
     # Initialize system state (RNG)
     safe_state(args.quiet)
 
-    render_sets(model.extract(args), args.iteration, pipeline.extract(args), args.skip_train, args.skip_test, args.mode)
+    render_sets(model.extract(args), args.iteration, pipeline.extract(args), args.skip_train, args.skip_test, args.mode, args.head_layer)

@@ -14,11 +14,8 @@ SCENE="${SCENE:-standup}"
 DATA_ROOT=$SCRATCH/ls6/data
 OUT_ROOT=$WORK/Deformable-3D-Gaussians-Alex
 
-<<<<<<< HEAD
-=======
 DATA_ROOT=/scratch/11293/rak3284/ls6/D-NeuMan/neuman/dataset
 OUT_ROOT=/work/11293/rak3284/ls6/outputs/optionA/one_seed/r2
->>>>>>> 4c21172 (human/bg split fix multiple humans)
 
 SRC="$DATA_ROOT/$SCENE"
 OUT="$OUT_ROOT/$SCENE/$SAVE_PATH"
