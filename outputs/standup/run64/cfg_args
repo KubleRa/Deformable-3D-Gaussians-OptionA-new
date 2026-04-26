@@ -1,0 +1,1 @@
+Namespace(sh_degree=3, source_path='/scratch/11293/rak3284/ls6/data/standup', model_path='/work/11293/rak3284/ls6/Deformable-3D-Gaussians-Alex/standup/run64', images='images', resolution=-1, white_background=False, data_device='cuda', eval=True, load2gpu_on_the_fly=False, is_blender=False, is_6dof=False, is_neuman=False)
