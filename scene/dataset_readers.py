@@ -612,29 +612,72 @@ def readPlenopticVideoDataset(path, eval, num_images, hold_id=[0]):
     return scene_info
 
 
+# Changed — Option A: load NeuMan's precomputed SMPL→COLMAP alignment.
+# alignments.npy is dict[image_name (e.g. "00000.png") -> (4,3) float32].
+# Rows 0..2 form a (3,3) similarity rotation+scale; row 3 is a translation
+# in COLMAP world units. Convention (verified empirically on bike):
+#     world_xyz = smpl_xyz @ R + t        (row-vector, R has uniform scale)
+# Returns None if the file is absent.
+def _load_neuman_alignments(source_path):
+    path = os.path.join(source_path, "alignments.npy")
+    if not os.path.isfile(path):
+        return None
+    return np.load(path, allow_pickle=True).item()
+
+
+# Changed — Option A: apply a (4,3) NeuMan alignment matrix to (V,3) verts.
+def _apply_alignment(verts, M):
+    return verts @ M[:3] + M[3]
+
+
 # Changed — Option A: ground-truth human seeding from SMPL canonical vertices.
 # Replaces the previous mask + COLMAP-MVS-depth back-projection pipeline, which
 # was unreliable on moving subjects (MVS assumes a rigid scene → noisy depths
 # on the human → back-projected ray fans). The NeuMan dataset ships per-frame
 # SMPL predictions (ROMP) at `smpl_pred/<frame>_png.npz`, each containing 6890
-# posed body-surface vertices in world space. We use the canonical-frame (00000)
-# vertices directly as ground-truth 3D human seed points: they cover the entire
-# body (front and back), have no projection/depth noise, and live in the same
-# world frame as the COLMAP sparse cloud.
+# posed body-surface vertices in a SMPL-local frame (centered near origin).
+# To put them in COLMAP world space we apply the per-frame similarity
+# transform from `alignments.npy` (rotation + uniform scale + translation)
+# — without it, the body sits at the world origin instead of on the subject
+# (~6 m off for the bike scene).
 def _load_smpl_canonical_vertices(source_path, canonical_frame="00000"):
-    """Load the SMPL posed vertices of the canonical NeuMan frame as
-    human-tagged seed points. Returns (xyz, rgb) with xyz of shape (6890, 3)
-    in world coordinates, or (None, None) if the file is missing."""
+    """Load the SMPL posed vertices of the canonical NeuMan frame, mapped
+    into COLMAP world space via alignments.npy. Returns (xyz, rgb) with xyz
+    of shape (6890, 3) in world coordinates, or (None, None) if the SMPL
+    npz or the alignment file is missing."""
     pred_path = os.path.join(source_path, "smpl_pred",
                              f"{canonical_frame}_png.npz")
     if not os.path.isfile(pred_path):
         return None, None
+    align = _load_neuman_alignments(source_path)
+    if align is None:
+        print(f"[Option A] WARNING: {os.path.join(source_path, 'alignments.npy')} "
+              f"missing — cannot place SMPL human in COLMAP world. "
+              f"Skipping human seeding.")
+        return None, None
+    key = f"{canonical_frame}.png"
+    if key not in align:
+        print(f"[Option A] WARNING: alignments.npy has no entry for {key} "
+              f"(available: {list(align.keys())[:3]}...). Skipping human seeding.")
+        return None, None
     data = np.load(pred_path, allow_pickle=True)
     verts = np.asarray(data["results"][0]["verts"], dtype=np.float32)  # (V, 3)
+    # Sanity canary in SMPL-local units (the 3 m bound is meaningful here;
+    # post-alignment the world extent scales with the per-scene similarity).
+    assert verts.shape == (6890, 3), \
+        f"[Option A] expected (6890, 3) SMPL verts, got {verts.shape}"
+    bbox_local = (verts.max(0) - verts.min(0)).max()
+    assert bbox_local < 3.0, \
+        f"[Option A] SMPL-local bbox extent {bbox_local:.2f} m > 3 m — multi-pose contamination?"
+    verts_world = _apply_alignment(verts, np.asarray(align[key], dtype=np.float32))
+    print(f"[Option A] SMPL canonical centroid (world): "
+          f"({verts_world.mean(0)[0]:+.3f}, {verts_world.mean(0)[1]:+.3f}, "
+          f"{verts_world.mean(0)[2]:+.3f}); "
+          f"height {verts_world[:,1].max() - verts_world[:,1].min():.2f} m")
     # Neutral grey init colour; 3DGS spherical-harmonics will learn the real
     # colour from the photometric loss during training.
-    rgb = np.full_like(verts, 0.5, dtype=np.float32)
-    return verts, rgb
+    rgb = np.full_like(verts_world, 0.5, dtype=np.float32)
+    return verts_world.astype(np.float32), rgb
 
 
 # Changed — Option A: NeuMan scene reader. Reuses the COLMAP reader for
